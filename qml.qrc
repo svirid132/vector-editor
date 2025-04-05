@@ -1,0 +1,20 @@
+<RCC>
+    <qresource prefix="/">
+        <file>main.qml</file>
+        <file>_PainterText.qml</file>
+        <file>assets/evrazia_157x107_FR.jpg</file>
+        <file>ImageEdior.qml</file>
+        <file>Panel.qml</file>
+        <file>ImageScene.qml</file>
+        <file>ScrollView.qml</file>
+        <file>javascript/math.js</file>
+        <file>ImageZoomer.qml</file>
+        <file>javascript/painter.js</file>
+        <file>javascript/element-math.js</file>
+        <file>assets/cursor/selected-cursor.svg</file>
+        <file>assets/cursor/text-cursor.svg</file>
+        <file>assets/cursor/selected-cursor.png</file>
+        <file>painter/ItemPainter.qml</file>
+        <file>painter/TextPainter.qml</file>
+    </qresource>
+</RCC>
