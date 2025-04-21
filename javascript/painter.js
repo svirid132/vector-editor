@@ -41,8 +41,71 @@ function multiMatrixScale(matrix, num) {
 }
 
 // функции по умолчанию
-function isPointInsideElement(point, element) {
-    return isPointInsideSize(point, {startPoint: element.coor.startPoint, endPoint: element.coor.endPoint})
+function translateElement(element, moveVector) {
+    const newElement = JSON.parse(JSON.stringify(element))
+    if (element.type === 'text') {
+        newElement.coor.createdPoint = translate(newElement.coor.createdPoint, moveVector)
+        return newElement
+    } else if (element.type === 'oval') {
+        newElement.coor.centerPoint = translate(newElement.coor.centerPoint, moveVector)
+        return newElement
+    }
+
+    newElement.coor.startPoint = translate(newElement.coor.startPoint, moveVector)
+    newElement.coor.endPoint = translate(newElement.coor.endPoint, moveVector)
+    return newElement
+}
+
+function zoomElement(zoomer, element) {
+    if (element.type === 'text')  {
+        return zoomTextElement(zoomer, element)
+    } else if(element.type === 'oval') {
+        return zoomOvalElement(zoomer, element)
+    } else if (element.type === 'rect') {
+        return zoomRectElement(zoomer, element)
+    }
+    return undefined
+}
+
+function getSize(ctx, element) {
+    switch(element.type) {
+    case 'text':
+        return getTextElementSize(ctx, element)
+    case 'oval':
+        const size = {
+            startPoint: {
+                x: element.coor.centerPoint.x - element.radiusX,
+                y: element.coor.centerPoint.y - element.radiusY
+            },
+            endPoint: {
+                x: element.coor.centerPoint.x + element.radiusX,
+                y: element.coor.centerPoint.y + element.radiusY
+            }
+        }
+        return size
+    }
+    return element.coor
+}
+
+function isPointInsideElement(point, element, ctx) {
+    if (element.type === 'text') {
+        const size = getTextElementSize(ctx, element)
+        return isPointInsideSize(point, size)
+    } else if (element.type === 'oval') {
+        return isPointInEllipse(point, element)
+    }
+
+    return isPointInsideSize(point, element.coor)
+}
+
+function isPointInEllipse(point, element) {
+    const centerX = element.coor.centerPoint.x
+    const centerY = element.coor.centerPoint.y
+    const radiusX = element.radiusX
+    const radiusY = element.radiusY
+    const dx = point.x - centerX
+    const dy = point.y - centerY
+    return (dx * dx) / (radiusX * radiusX) + (dy * dy) / (radiusY * radiusY) <= 1;
 }
 
 function isPointInsideSize(point, size) {
@@ -99,6 +162,26 @@ function isPoointInsideTextElement(ctx, point, element) {
     return isPointInsideSize(point, size)
 }
 
+function isSwapTextSelection(startSelection, endSelection) {
+    if (startSelection.lineIndex > endSelection.lineIndex) {
+        return true
+    } else if (startSelection.lineIndex === endSelection.lineIndex && startSelection.columnIndex > endSelection.columnIndex) {
+        return true
+    }
+
+    return false
+}
+
+function swapTextSelection(startSelection, endSelection) {
+    const tmp = JSON.parse(JSON.stringify(startSelection))
+    startSelection = endSelection
+    endSelection = tmp
+    return {
+        startSelection,
+        endSelection
+    }
+}
+
 function insideTextCursorIndex(ctx, point, element) {
     const lines = element.lines
     for (let i = 0; i < lines.length; ++i) {
@@ -120,14 +203,14 @@ function insideTextCursorIndex(ctx, point, element) {
                 currentWidth += charWidth
                 if (currentWidth >= needWidth) {
                     if (charWidth / 2 < currentWidth - needWidth) {
-                        return { lineIndex: i, columnIndex: ind - 1 }
-                    } else {
                         return { lineIndex: i, columnIndex: ind }
+                    } else {
+                        return { lineIndex: i, columnIndex: ind + 1 }
                     }
                 }
             }
 
-            return {lineIndex: i, columnIndex: -1}
+            return {lineIndex: i, columnIndex: 0}
         }
     }
     return undefined
@@ -138,20 +221,20 @@ function getTextColumnIndex(ctx, x, line, fontHeight, fontFamily) {
     const arr = line.split('')
     const firstWidth = getWidthText(ctx, arr[0], fontHeight, fontFamily)
     if (x < firstWidth) {
-        return -1
+        return 0
     }
     for (let ind = 0; ind < arr.length; ++ind) {
         const charWidth = getWidthText(ctx, arr[ind], fontHeight, fontFamily)
         currentWidth += charWidth
         if (currentWidth >= x) {
             if (charWidth / 2 < (currentWidth - x)) {
-                return ind - 1
+                return ind
             } else {
                 return ind
             }
         }
     }
-    return arr.length - 1
+    return arr.length
 }
 
 function textCursorIndex(ctx, point, element) {
@@ -289,8 +372,13 @@ function drawTextElement(ctx, element, editableProperty) {
         // Работа с выделеным тесктом
         if (editableProperty.startSelection && editableProperty.endSelection) {
             const rects = []
-            const startSelection = editableProperty.startSelection
-            const endSelection = editableProperty.endSelection
+            let startSelection = JSON.parse(JSON.stringify(editableProperty.startSelection))
+            let endSelection = JSON.parse(JSON.stringify(editableProperty.endSelection))
+            if (isSwapTextSelection(startSelection, endSelection)) {
+                const res = swapTextSelection(startSelection, endSelection)
+                startSelection = res.startSelection
+                endSelection = res.endSelection
+            }
             const startSelectLine = lines[startSelection.lineIndex]
             // для start
             const startText = startSelection.lineIndex === endSelection.lineIndex ?
@@ -314,7 +402,7 @@ function drawTextElement(ctx, element, editableProperty) {
                 endPoint: {x: 2, y: element.fontHeight}
             }
             const cursorIndex = editableProperty.cursorIndex
-            const text = lines[cursorIndex.lineIndex].slice(0, cursorIndex.columnIndex + 1)
+            const text = lines[cursorIndex.lineIndex].slice(0, cursorIndex.columnIndex)
             const textWidth = getWidthText(ctx, text,  element.fontHeight, element.fontFamily)
             const createdCursorPoint = {
                 x: element.coor.createdPoint.x + textWidth + cursorSize.endPoint.x / 2,
@@ -326,5 +414,63 @@ function drawTextElement(ctx, element, editableProperty) {
         }
     }
 
+    ctx.restore()
+}
+
+// rect
+function zoomRectElement(zoomer, element) {
+    const zoomedRectElement = JSON.parse(JSON.stringify(element))
+    zoomedRectElement.strokeWidth = zoomer.zoomNum(element.strokeWidth)
+    zoomedRectElement.coor.startPoint = zoomer.zoomPoint(element.coor.startPoint)
+    zoomedRectElement.coor.endPoint = zoomer.zoomPoint(element.coor.endPoint)
+
+    return zoomedRectElement
+}
+
+function drawRect(ctx, element) {
+    ctx.save()
+    const rectSize = getRectSize(element.coor)
+
+    ctx.fillStyle = element.fillColor
+    ctx.fillRect(rectSize.x, rectSize.y, rectSize.width, rectSize.height)
+
+    ctx.strokeStyle = element.strokeColor
+    ctx.lineWidth = element.strokeWidth
+    ctx.strokeRect(rectSize.x, rectSize.y, rectSize.width, rectSize.height)
+
+    ctx.restore()
+}
+
+// oval
+function zoomOvalElement(zoomer, element) {
+    const zoomedOvalElement = JSON.parse(JSON.stringify(element))
+    zoomedOvalElement.radiusX = zoomer.zoomNum(element.radiusX)
+    zoomedOvalElement.radiusY = zoomer.zoomNum(element.radiusY)
+    zoomedOvalElement.coor.centerPoint = zoomer.zoomPoint(element.coor.centerPoint)
+
+    return zoomedOvalElement
+}
+
+function drawOval(ctx, element) {
+    ctx.save()
+
+    ctx.beginPath()
+    const translatePoint = {
+        x: -element.radiusX,
+        y: -element.radiusY
+    }
+    ctx.translate(translatePoint.x, translatePoint.y)
+    ctx.ellipse(element.coor.centerPoint.x, element.coor.centerPoint.y, element.radiusX * 2, element.radiusY * 2, 0, 0, 2 * Math.PI)
+
+    // Заливка
+    ctx.fillStyle = element.fillColor
+    ctx.fill()
+
+    // Обводка
+    ctx.strokeStyle = element.strokeColor
+    ctx.lineWidth = element.strokeWidth
+    ctx.stroke()
+
+    ctx.closePath()
     ctx.restore()
 }

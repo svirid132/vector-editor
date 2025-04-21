@@ -58,7 +58,6 @@ ItemPainter {
             const point = {x: mouse.x, y: mouse.y}
             const zoomedElement = Painter.zoomTextElement(root.zoomer, root.editableElement)
             editableProperty.endSelection = Painter.textCursorIndex(root.context, point, zoomedElement)
-            console.log(JSON.stringify(editableProperty.startSelection))
             root.requestPaint()
         }
     }
